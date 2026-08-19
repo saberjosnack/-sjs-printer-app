@@ -5,13 +5,14 @@ import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.webkit.GeolocationPermissions
+import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 
-// ⚠️ غيّري هاد الرابط لرابط موقعك المباشر (نفس الرابط يلي عم تفتحيه من المتصفح العادي)
 private const val SITE_URL = "https://saberjosnack.github.io/App-sjs/"
 
 class MainActivity : AppCompatActivity() {
@@ -21,21 +22,59 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // 🔒 نطلب صلاحيات البلوتوث وقت التشغيل (لازمة بأندرويد 12+)
         requestBluetoothPermissionsIfNeeded()
+        requestLocationPermissionIfNeeded()
 
         val webView = findViewById<WebView>(R.id.webView)
         val settings: WebSettings = webView.settings
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         settings.databaseEnabled = true
-        settings.cacheMode = WebSettings.LOAD_NO_CACHE // نفس فكرة Cache-Control اللي ضفتوها بالموقع — دايمًا آخر نسخة
+        settings.setGeolocationEnabled(true)
+        settings.cacheMode = WebSettings.LOAD_NO_CACHE
 
-        // 🖨️ هون بالضبط بينربط الجسر — لازم يكون اسمه "SJSPrinter" بالحرف عشان يطابق الكود بالموقع
         webView.addJavascriptInterface(SJSPrinterBridge(this, webView), "SJSPrinter")
 
-        webView.webViewClient = WebViewClient() // يخلي كل التنقل جوا نفس الـWebView (مش يفتح متصفح خارجي)
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onGeolocationPermissionsShowPrompt(
+                origin: String,
+                callback: GeolocationPermissions.Callback
+            ) {
+                val granted = ActivityCompat.checkSelfPermission(
+                    this@MainActivity, Manifest.permission.ACCESS_FINE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+                callback.invoke(origin, granted, false)
+            }
+        }
+
+        webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean {
+                val url = request.url.toString()
+                if (url.startsWith("rawbt:")) {
+                    try {
+                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                    }
+                    return true
+                }
+                return false
+            }
+        }
         webView.loadUrl(SITE_URL)
+    }
+
+    private fun requestLocationPermissionIfNeeded() {
+        val needed = arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+        val missing = needed.filter {
+            ActivityCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, missing.toTypedArray(), 101)
+        }
     }
 
     private fun requestBluetoothPermissionsIfNeeded() {
